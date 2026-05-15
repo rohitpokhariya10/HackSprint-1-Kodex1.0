@@ -42,6 +42,12 @@ const sendError = (res, statusCode, message) => {
   });
 };
 
+const getValidationErrorMessage = (error) => {
+  return Object.values(error.errors)
+    .map((err) => err.message)
+    .join(", ");
+};
+
 const buildProjectPayload = (body) => {
   const payload = { ...body };
   delete payload.coverImageFileId;
@@ -68,18 +74,23 @@ const applyProjectImageUploads = async (
   const imageFiles = req.files?.images || [];
 
   if (coverImageFile) {
-    const uploadedCover = await uploadBufferToImageKit(
-      coverImageFile,
-      "/devhub/projects/covers"
-    );
+    try {
+      const uploadedCover = await uploadBufferToImageKit(
+        coverImageFile,
+        "/devhub/projects/covers"
+      );
 
-    payload.coverImage = uploadedCover.url;
-    payload.coverImageFileId = uploadedCover.fileId;
+      payload.coverImage = uploadedCover.url;
+      payload.coverImageFileId = uploadedCover.fileId;
 
-    if (existingProject?.coverImageFileId) {
-      fileIdsToDelete.push(existingProject.coverImageFileId);
+      if (existingProject?.coverImageFileId) {
+        fileIdsToDelete.push(existingProject.coverImageFileId);
+      }
+    } catch (error) {
+      console.warn("Project cover upload skipped:", error.message);
     }
-  } else if (typeof req.body.coverImage === "string") {
+  } else if (typeof req.body.coverImage === "string" && req.body.coverImage === "") {
+    payload.coverImage = "";
     payload.coverImageFileId = "";
     if (existingProject?.coverImageFileId) {
       fileIdsToDelete.push(existingProject.coverImageFileId);
@@ -87,11 +98,24 @@ const applyProjectImageUploads = async (
   }
 
   if (imageFiles.length > 0) {
-    const uploadedImages = await Promise.all(
+    const uploadResults = await Promise.allSettled(
       imageFiles.map((file) =>
         uploadBufferToImageKit(file, "/devhub/projects/gallery")
       )
     );
+    const uploadedImages = uploadResults
+      .filter((result) => result.status === "fulfilled")
+      .map((result) => result.value);
+
+    uploadResults
+      .filter((result) => result.status === "rejected")
+      .forEach((result) => {
+        console.warn("Project gallery upload skipped:", result.reason?.message);
+      });
+
+    if (uploadedImages.length === 0) {
+      return payload;
+    }
 
     payload.images = uploadedImages.map((image) => image.url);
     payload.imageFileIds = uploadedImages.map((image) => image.fileId);
@@ -172,11 +196,7 @@ const createProjectController = async (req, res) => {
     }
 
     if (error.name === "ValidationError") {
-      const message = Object.values(error.errors)
-        .map((err) => err.message)
-        .join(", ");
-
-      return sendError(res, 400, message);
+      return sendError(res, 400, getValidationErrorMessage(error));
     }
 
     return sendError(res, 500, "Internal server error");
@@ -427,11 +447,7 @@ const updateProjectController = async (req, res) => {
     }
 
     if (error.name === "ValidationError") {
-      const message = Object.values(error.errors)
-        .map((err) => err.message)
-        .join(", ");
-
-      return sendError(res, 400, message);
+      return sendError(res, 400, getValidationErrorMessage(error));
     }
 
     return sendError(res, 500, "Internal server error");

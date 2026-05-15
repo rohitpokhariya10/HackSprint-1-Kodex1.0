@@ -10,6 +10,7 @@ import { FormInput } from "../shared/components/FormInput";
 import { FormTextarea } from "../shared/components/FormTextarea";
 import { Button } from "../shared/ui/Button";
 import { Card } from "../shared/ui/Card";
+import { getApiErrorMessage } from "../shared/lib/apiError";
 
 export function EditProjectPage() {
   const { id = "" } = useParams();
@@ -52,8 +53,8 @@ export function EditProjectPage() {
       await updateProject({ id, body: payload }).unwrap();
       toast.success("Project updated");
       navigate(`/projects/${id}`);
-    } catch {
-      toast.error("Could not update project");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Could not update project"));
     }
   };
   return (
