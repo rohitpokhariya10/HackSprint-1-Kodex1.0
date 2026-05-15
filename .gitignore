@@ -1,3 +1,10 @@
+node_modules/
+dist/
+*.log
+*.err
+.env
+.env.local
+.DS_Store
 # Logs
 logs
 *.log

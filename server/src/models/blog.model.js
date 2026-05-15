@@ -92,6 +92,12 @@ const blogSchema = new mongoose.Schema(
       },
     },
 
+    coverImageFileId: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
     tags: {
       type: [String],
       default: [],

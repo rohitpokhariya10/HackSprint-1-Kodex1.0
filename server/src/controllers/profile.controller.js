@@ -1,5 +1,11 @@
 const mongoose = require("mongoose");
 const profileModel = require("../models/profile.model");
+const parseArrayField = require("../utils/parseArrayField");
+const escapeRegex = require("../utils/escapeRegex");
+const {
+  uploadBufferToImageKit,
+  deleteManyFromImageKit,
+} = require("../services/imagekit.service");
 
 // Allowed fields for profile update
 const allowedProfileFields = [
@@ -18,30 +24,101 @@ const allowedProfileFields = [
 // Helper function: only allowed fields update honi chahiye
 const buildProfileUpdateData = (body) => {
   const updateData = {};
+  const sourceBody = { ...body };
+
+  if (sourceBody.skills !== undefined) {
+    sourceBody.skills = parseArrayField(sourceBody.skills);
+  }
+
+  if (typeof sourceBody.socialLinks === "string") {
+    try {
+      sourceBody.socialLinks = JSON.parse(sourceBody.socialLinks);
+    } catch (error) {
+      sourceBody.socialLinks = null;
+    }
+  }
+
+  if (typeof sourceBody.portfolioShowcase === "string") {
+    try {
+      sourceBody.portfolioShowcase = JSON.parse(sourceBody.portfolioShowcase);
+    } catch (error) {
+      sourceBody.portfolioShowcase = [];
+    }
+  }
 
   // Normal fields
   allowedProfileFields.forEach((field) => {
-    if (body[field] !== undefined) {
-      updateData[field] = body[field];
+    if (sourceBody[field] !== undefined) {
+      updateData[field] = sourceBody[field];
     }
   });
 
   // Nested socialLinks fields
-  if (body.socialLinks) {
-    if (body.socialLinks.github !== undefined) {
-      updateData["socialLinks.github"] = body.socialLinks.github;
+  if (sourceBody.socialLinks) {
+    if (sourceBody.socialLinks.github !== undefined) {
+      updateData["socialLinks.github"] = sourceBody.socialLinks.github;
     }
 
-    if (body.socialLinks.linkedin !== undefined) {
-      updateData["socialLinks.linkedin"] = body.socialLinks.linkedin;
+    if (sourceBody.socialLinks.linkedin !== undefined) {
+      updateData["socialLinks.linkedin"] = sourceBody.socialLinks.linkedin;
     }
 
-    if (body.socialLinks.twitter !== undefined) {
-      updateData["socialLinks.twitter"] = body.socialLinks.twitter;
+    if (sourceBody.socialLinks.twitter !== undefined) {
+      updateData["socialLinks.twitter"] = sourceBody.socialLinks.twitter;
     }
 
-    if (body.socialLinks.portfolio !== undefined) {
-      updateData["socialLinks.portfolio"] = body.socialLinks.portfolio;
+    if (sourceBody.socialLinks.portfolio !== undefined) {
+      updateData["socialLinks.portfolio"] = sourceBody.socialLinks.portfolio;
+    }
+  }
+
+  return updateData;
+};
+
+const applyProfileImageUploads = async (
+  req,
+  updateData,
+  existingProfile = null,
+  fileIdsToDelete = []
+) => {
+  const avatarFile = req.files?.avatar?.[0];
+  const bannerFile = req.files?.banner?.[0];
+
+  if (avatarFile) {
+    const uploadedAvatar = await uploadBufferToImageKit(
+      avatarFile,
+      "/devhub/profiles/avatars"
+    );
+
+    updateData.avatar = uploadedAvatar.url;
+    updateData.avatarFileId = uploadedAvatar.fileId;
+
+    if (existingProfile?.avatarFileId) {
+      fileIdsToDelete.push(existingProfile.avatarFileId);
+    }
+  } else if (typeof req.body.avatar === "string") {
+    updateData.avatarFileId = "";
+    if (existingProfile?.avatarFileId) {
+      fileIdsToDelete.push(existingProfile.avatarFileId);
+    }
+  }
+
+  if (bannerFile) {
+    const uploadedBanner = await uploadBufferToImageKit(
+      bannerFile,
+      "/devhub/profiles/banners"
+    );
+
+    updateData.banner = uploadedBanner.url;
+    updateData.bannerFileId = uploadedBanner.fileId;
+
+    if (existingProfile?.bannerFileId) {
+      fileIdsToDelete.push(existingProfile.bannerFileId);
+    }
+  } else if (typeof req.body.banner === "string") {
+    updateData.bannerFileId = "";
+    if (existingProfile?.bannerFileId) {
+      fileIdsToDelete.push(existingProfile.bannerFileId);
     }
   }
 
@@ -64,7 +141,10 @@ const createProfileController = async (req, res) => {
       });
     }
 
-    const profileData = buildProfileUpdateData(req.body);
+    const profileData = await applyProfileImageUploads(
+      req,
+      buildProfileUpdateData(req.body)
+    );
 
     const profile = await profileModel.create({
       user: userId,
@@ -83,6 +163,13 @@ const createProfileController = async (req, res) => {
   } catch (error) {
     console.error("Create profile error:", error);
 
+    if (error.publicMessage) {
+      return res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.publicMessage,
+      });
+    }
+
     return res.status(500).json({
       success: false,
       message: "Internal server error while creating profile.",
@@ -100,9 +187,13 @@ const getMyProfileController = async (req, res) => {
       .populate("user", "name email role");
 
     if (!profile) {
-      return res.status(404).json({
-        success: false,
-        message: "Profile not found. Please create your profile first.",
+      return res.status(200).json({
+        success: true,
+        message: "Profile not created yet.",
+        data: null,
+        meta: {
+          profileExists: false,
+        },
       });
     }
 
@@ -110,6 +201,9 @@ const getMyProfileController = async (req, res) => {
       success: true,
       message: "Profile fetched successfully.",
       data: profile,
+      meta: {
+        profileExists: true,
+      },
     });
   } catch (error) {
     console.error("Get my profile error:", error);
@@ -126,7 +220,24 @@ const getMyProfileController = async (req, res) => {
 // Logged-in user ka profile update karega
 const updateMyProfileController = async (req, res) => {
   try {
-    const updateData = buildProfileUpdateData(req.body);
+    const existingProfile = await profileModel
+      .findOne({ user: req.user._id })
+      .select("+avatarFileId +bannerFileId");
+
+    if (!existingProfile) {
+      return res.status(404).json({
+        success: false,
+        message: "Profile not found. Please create your profile first.",
+      });
+    }
+
+    const oldFileIdsToDelete = [];
+    const updateData = await applyProfileImageUploads(
+      req,
+      buildProfileUpdateData(req.body),
+      existingProfile,
+      oldFileIdsToDelete
+    );
 
     if (Object.keys(updateData).length === 0) {
       return res.status(400).json({
@@ -136,8 +247,8 @@ const updateMyProfileController = async (req, res) => {
     }
 
     const profile = await profileModel
-      .findOneAndUpdate(
-        { user: req.user._id },
+      .findByIdAndUpdate(
+        existingProfile._id,
         { $set: updateData },
         {
           new: true,
@@ -146,12 +257,7 @@ const updateMyProfileController = async (req, res) => {
       )
       .populate("user", "name email role");
 
-    if (!profile) {
-      return res.status(404).json({
-        success: false,
-        message: "Profile not found. Please create your profile first.",
-      });
-    }
+    await deleteManyFromImageKit(oldFileIdsToDelete);
 
     return res.status(200).json({
       success: true,
@@ -160,6 +266,13 @@ const updateMyProfileController = async (req, res) => {
     });
   } catch (error) {
     console.error("Update profile error:", error);
+
+    if (error.publicMessage) {
+      return res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.publicMessage,
+      });
+    }
 
     return res.status(500).json({
       success: false,
@@ -187,9 +300,10 @@ const getAllProfilesController = async (req, res) => {
 
     // Skill filter
     if (skill) {
-      filter.skills = {
-        $in: [skill.toLowerCase()],
-      };
+      const safeSkill = escapeRegex(String(skill).trim().toLowerCase());
+      if (safeSkill) {
+        filter.skills = { $regex: safeSkill, $options: "i" };
+      }
     }
 
     // Open to work filter
@@ -197,31 +311,56 @@ const getAllProfilesController = async (req, res) => {
       filter.isOpenToWork = openToWork === "true";
     }
 
-    // Text search
-    if (search) {
-      filter.$text = {
-        $search: search,
-      };
+    const searchValue = search ? String(search).trim() : "";
+
+    if (searchValue) {
+      const safeSearch = escapeRegex(searchValue);
+      filter.$or = [
+        { headline: { $regex: safeSearch, $options: "i" } },
+        { bio: { $regex: safeSearch, $options: "i" } },
+        { skills: { $regex: safeSearch, $options: "i" } },
+        { githubUsername: { $regex: safeSearch, $options: "i" } },
+        { location: { $regex: safeSearch, $options: "i" } },
+      ];
     }
 
-    const skip = (Number(page) - 1) * Number(limit);
+    if (process.env.NODE_ENV !== "production" && process.env.DEBUG_API === "true") {
+      console.log("PROFILE SEARCH:", { search, skill, openToWork, filter });
+    }
 
-    const profiles = await profileModel
+    const pageNumber = Math.max(Number(page) || 1, 1);
+    const limitNumber = Math.min(Math.max(Number(limit) || 10, 1), 50);
+    const skip = (pageNumber - 1) * limitNumber;
+
+    const sortOption = { createdAt: -1 };
+
+    const profilesQuery = profileModel
       .find(filter)
       .populate("user", "name email role")
-      .sort({ createdAt: -1 })
+      .sort(sortOption)
       .skip(skip)
-      .limit(Number(limit));
+      .limit(limitNumber);
+
+    const profiles = await profilesQuery;
 
     const totalProfiles = await profileModel.countDocuments(filter);
+    const totalPages = Math.ceil(totalProfiles / limitNumber);
 
     return res.status(200).json({
       success: true,
       message: "Profiles fetched successfully.",
       count: profiles.length,
       totalProfiles,
-      currentPage: Number(page),
-      totalPages: Math.ceil(totalProfiles / Number(limit)),
+      currentPage: pageNumber,
+      totalPages,
+      meta: {
+        totalProfiles,
+        totalPages,
+        currentPage: pageNumber,
+        limit: limitNumber,
+        hasNextPage: pageNumber < totalPages,
+        hasPrevPage: pageNumber > 1,
+      },
       data: profiles,
     });
   } catch (error) {

@@ -1,5 +1,9 @@
 const express = require("express");
 const authMiddleware = require("../middleware/auth.middleware");
+const {
+  uploadSingle,
+  handleUploadError,
+} = require("../middleware/upload.middleware");
 
 const {
   createBlogController,
@@ -22,8 +26,18 @@ router.get("/my", authMiddleware, getMyBlogsController);
 router.get("/:idOrSlug", getSingleBlogController);
 
 // Protected CRUD
-router.post("/", authMiddleware, createBlogController);
-router.patch("/:id", authMiddleware, updateBlogController);
+router.post(
+  "/",
+  authMiddleware,
+  handleUploadError(uploadSingle("coverImage")),
+  createBlogController
+);
+router.patch(
+  "/:id",
+  authMiddleware,
+  handleUploadError(uploadSingle("coverImage")),
+  updateBlogController
+);
 router.delete("/:id", authMiddleware, deleteBlogController);
 
 module.exports = router;

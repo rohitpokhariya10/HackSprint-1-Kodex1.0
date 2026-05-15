@@ -1,6 +1,12 @@
 const mongoose = require("mongoose");
 const blogModel = require("../models/blog.model");
 const slugify = require("../utils/slugify");
+const parseArrayField = require("../utils/parseArrayField");
+const escapeRegex = require("../utils/escapeRegex");
+const {
+  uploadBufferToImageKit,
+  deleteFromImageKit,
+} = require("../services/imagekit.service");
 
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
@@ -38,6 +44,45 @@ const normalizeQueryValue = (value) => {
   return String(value).trim().toLowerCase();
 };
 
+const buildBlogPayload = (body) => {
+  const payload = { ...body };
+  delete payload.coverImageFileId;
+
+  if (payload.tags !== undefined) {
+    payload.tags = parseArrayField(payload.tags);
+  }
+
+  return payload;
+};
+
+const applyBlogCoverUpload = async (
+  req,
+  payload,
+  existingBlog = null,
+  fileIdsToDelete = []
+) => {
+  if (req.file) {
+    const uploadedCover = await uploadBufferToImageKit(
+      req.file,
+      "/devhub/blogs/covers"
+    );
+
+    payload.coverImage = uploadedCover.url;
+    payload.coverImageFileId = uploadedCover.fileId;
+
+    if (existingBlog?.coverImageFileId) {
+      fileIdsToDelete.push(existingBlog.coverImageFileId);
+    }
+  } else if (typeof req.body.coverImage === "string") {
+    payload.coverImageFileId = "";
+    if (existingBlog?.coverImageFileId) {
+      fileIdsToDelete.push(existingBlog.coverImageFileId);
+    }
+  }
+
+  return payload;
+};
+
 const generateUniqueSlug = async (title, excludeBlogId = null) => {
   const baseSlug = slugify(title) || "blog";
   let slug = baseSlug;
@@ -68,16 +113,19 @@ const createBlogController = async (req, res) => {
       return sendError(res, 401, "Unauthorized access");
     }
 
+    const payload = await applyBlogCoverUpload(req, buildBlogPayload(req.body));
+
     const {
       title,
       excerpt,
       content,
       contentFormat,
       coverImage,
+      coverImageFileId,
       tags,
       category,
       status = "published",
-    } = req.body;
+    } = payload;
 
     if (!title || !String(title).trim()) {
       return sendError(res, 400, "Blog title is required");
@@ -109,6 +157,7 @@ const createBlogController = async (req, res) => {
       content,
       contentFormat,
       coverImage,
+      coverImageFileId,
       tags,
       category,
       status,
@@ -119,6 +168,10 @@ const createBlogController = async (req, res) => {
     return sendSuccess(res, 201, "Blog created successfully", blog);
   } catch (error) {
     console.error("Error in createBlogController:", error);
+
+    if (error.publicMessage) {
+      return sendError(res, error.statusCode || 500, error.publicMessage);
+    }
 
     if (error.name === "ValidationError") {
       return sendError(res, 400, getValidationErrorMessage(error));
@@ -154,26 +207,35 @@ const getAllBlogsController = async (req, res) => {
     const categoryValue = normalizeQueryValue(category);
 
     if (searchValue) {
-      query.$text = { $search: searchValue };
+      const safeSearch = escapeRegex(searchValue);
+      query.$or = [
+        { title: { $regex: safeSearch, $options: "i" } },
+        { excerpt: { $regex: safeSearch, $options: "i" } },
+        { content: { $regex: safeSearch, $options: "i" } },
+        { tags: { $regex: safeSearch, $options: "i" } },
+        { category: { $regex: safeSearch, $options: "i" } },
+      ];
     }
 
     if (tagValue) {
-      query.tags = tagValue;
+      query.tags = { $regex: escapeRegex(tagValue), $options: "i" };
     }
 
     if (categoryValue) {
-      query.category = categoryValue;
+      query.category = { $regex: escapeRegex(categoryValue), $options: "i" };
     }
 
     if (featured === "true") {
       query.isFeatured = true;
     }
 
+    if (process.env.NODE_ENV !== "production" && process.env.DEBUG_API === "true") {
+      console.log("BLOG SEARCH:", { search, tag, category, sort, query });
+    }
+
     let sortOption;
 
-    if (searchValue) {
-      sortOption = { score: { $meta: "textScore" } };
-    } else if (sort === "trending") {
+    if (sort === "trending") {
       sortOption = { views: -1, likesCount: -1, createdAt: -1 };
     } else if (sort === "oldest") {
       sortOption = { createdAt: 1 };
@@ -181,9 +243,7 @@ const getAllBlogsController = async (req, res) => {
       sortOption = { createdAt: -1 };
     }
 
-    const projection = searchValue
-      ? { score: { $meta: "textScore" }, content: 0 }
-      : { content: 0 };
+    const projection = { content: 0 };
 
     const blogsQuery = blogModel
       .find(query, projection)
@@ -239,7 +299,7 @@ const getMyBlogsController = async (req, res) => {
 
     const [blogs, totalBlogs] = await Promise.all([
       blogModel
-        .find(query, { content: 0 })
+        .find(query)
         .populate("author", "name email role")
         .sort({ createdAt: -1 })
         .skip(skip)
@@ -318,7 +378,7 @@ const updateBlogController = async (req, res) => {
       return sendError(res, 400, "Invalid blog id");
     }
 
-    const blog = await blogModel.findById(id);
+    const blog = await blogModel.findById(id).select("+coverImageFileId");
 
     if (!blog) {
       return sendError(res, 404, "Blog not found");
@@ -328,13 +388,21 @@ const updateBlogController = async (req, res) => {
       return sendError(res, 403, "You are not allowed to update this blog");
     }
 
-    if (req.body.tags !== undefined && !Array.isArray(req.body.tags)) {
+    const oldFileIdsToDelete = [];
+    const payload = await applyBlogCoverUpload(
+      req,
+      buildBlogPayload(req.body),
+      blog,
+      oldFileIdsToDelete
+    );
+
+    if (payload.tags !== undefined && !Array.isArray(payload.tags)) {
       return sendError(res, 400, "Tags must be an array");
     }
 
     if (
-      req.body.status !== undefined &&
-      !["draft", "published"].includes(req.body.status)
+      payload.status !== undefined &&
+      !["draft", "published"].includes(payload.status)
     ) {
       return sendError(res, 400, "Status must be either draft or published");
     }
@@ -344,41 +412,47 @@ const updateBlogController = async (req, res) => {
       "content",
       "contentFormat",
       "coverImage",
+      "coverImageFileId",
       "tags",
       "category",
       "status",
     ];
 
-    if (req.body.title !== undefined) {
-      if (!String(req.body.title).trim()) {
+    if (payload.title !== undefined) {
+      if (!String(payload.title).trim()) {
         return sendError(res, 400, "Blog title cannot be empty");
       }
 
-      blog.title = req.body.title;
-      blog.slug = await generateUniqueSlug(req.body.title, blog._id);
+      blog.title = payload.title;
+      blog.slug = await generateUniqueSlug(payload.title, blog._id);
     }
 
     allowedFields.forEach((field) => {
-      if (req.body[field] !== undefined) {
-        blog[field] = req.body[field];
+      if (payload[field] !== undefined) {
+        blog[field] = payload[field];
       }
     });
 
-    if (req.body.isFeatured !== undefined) {
+    if (payload.isFeatured !== undefined) {
       if (req.user?.role !== "admin") {
         return sendError(res, 403, "Only admin can mark blog as featured");
       }
 
-      blog.isFeatured = req.body.isFeatured;
+      blog.isFeatured = payload.isFeatured;
     }
 
     await blog.save();
+    await Promise.all(oldFileIdsToDelete.map((fileId) => deleteFromImageKit(fileId)));
 
     await blog.populate("author", "name email role");
 
     return sendSuccess(res, 200, "Blog updated successfully", blog);
   } catch (error) {
     console.error("Error in updateBlogController:", error);
+
+    if (error.publicMessage) {
+      return sendError(res, error.statusCode || 500, error.publicMessage);
+    }
 
     if (error.name === "ValidationError") {
       return sendError(res, 400, getValidationErrorMessage(error));
@@ -402,7 +476,7 @@ const deleteBlogController = async (req, res) => {
       return sendError(res, 400, "Invalid blog id");
     }
 
-    const blog = await blogModel.findById(id);
+    const blog = await blogModel.findById(id).select("+coverImageFileId");
 
     if (!blog) {
       return sendError(res, 404, "Blog not found");
@@ -413,6 +487,7 @@ const deleteBlogController = async (req, res) => {
     }
 
     await blog.deleteOne();
+    await deleteFromImageKit(blog.coverImageFileId);
 
     return sendSuccess(res, 200, "Blog deleted successfully");
   } catch (error) {

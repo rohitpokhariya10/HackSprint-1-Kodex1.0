@@ -5,7 +5,7 @@ let generateAccessToken = (userId) => {
 }
 
 let generateRefreshToken = (userId) => {
-  return jwt.sign({ userId }, process.env.JWT_REFRESH_TOKEN, { expiresIn: "1h" })
+  return jwt.sign({ userId }, process.env.JWT_REFRESH_TOKEN, { expiresIn: "7d" })
 }
 
 module.exports = {

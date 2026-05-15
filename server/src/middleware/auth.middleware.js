@@ -1,6 +1,29 @@
 const jwt = require("jsonwebtoken");
 const userModel = require("../models/user.model");
 
+const getTokenFromRequest = (req) => {
+  if (req.cookies && req.cookies.accessToken) {
+    return req.cookies.accessToken;
+  }
+
+  if (req.headers.authorization?.startsWith("Bearer ")) {
+    return req.headers.authorization.split(" ")[1];
+  }
+
+  return null;
+};
+
+const attachUserFromToken = async (req, token) => {
+  const decoded = jwt.verify(token, process.env.JWT_ACCESS_TOKEN);
+  const user = await userModel.findById(decoded.userId);
+
+  if (!user) {
+    return null;
+  }
+
+  return user;
+};
+
 // Middleware ka kaam:
 // 1. Cookie ya header se accessToken lena
 // 2. Token verify karna
@@ -9,18 +32,7 @@ const userModel = require("../models/user.model");
 // 5. req.user me user attach karna
 const authMiddleware = async (req, res, next) => {
   try {
-    let token = null;
-
-    // 1. Cookie se accessToken lo
-    if (req.cookies && req.cookies.accessToken) {
-      token = req.cookies.accessToken;
-    }
-
-    // 2. Optional: Authorization header se token lo
-    // Example: Authorization: Bearer token_here
-    if (!token && req.headers.authorization?.startsWith("Bearer ")) {
-      token = req.headers.authorization.split(" ")[1];
-    }
+    const token = getTokenFromRequest(req);
 
     // 3. Agar token missing hai
     if (!token) {
@@ -30,12 +42,7 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
-    // 4. Token verify karo
-    const decoded = jwt.verify(token, process.env.JWT_ACCESS_TOKEN);
-
-    // Tum token generate karte time { userId } bhej rahe ho
-    // Isliye decoded.userId use karenge
-    const user = await userModel.findById(decoded.userId);
+    const user = await attachUserFromToken(req, token);
 
     // 5. Agar user DB me nahi mila
     if (!user) {
@@ -68,4 +75,25 @@ const authMiddleware = async (req, res, next) => {
   }
 };
 
+const optionalAuthMiddleware = async (req, res, next) => {
+  try {
+    const token = getTokenFromRequest(req);
+
+    if (!token) {
+      return next();
+    }
+
+    const user = await attachUserFromToken(req, token);
+
+    if (user && user.isActive) {
+      req.user = user;
+    }
+
+    return next();
+  } catch (error) {
+    return next();
+  }
+};
+
 module.exports = authMiddleware;
+module.exports.optionalAuthMiddleware = optionalAuthMiddleware;

@@ -1,12 +1,56 @@
-# React + Vite
+# DevHub Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Premium React + TypeScript frontend for the DevHub developer social platform.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- React + TypeScript + Vite
+- Redux Toolkit + RTK Query
+- React Router DOM
+- Tailwind CSS
+- Framer Motion
+- React Hook Form + Zod
+- Lucide React
+- Sonner
+- React Markdown
 
-## Expanding the ESLint configuration
+## Setup
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+cd client
+npm install
+cp .env.example .env
+npm run dev
+```
+
+Set the backend URL:
+
+```env
+VITE_API_BASE_URL=http://localhost:3000/api
+```
+
+## Build
+
+```bash
+npm run build
+```
+
+## Architecture
+
+- `src/app` global app, store, router, providers
+- `src/pages` route-level pages
+- `src/features` auth/profile/projects/blogs/search schemas and feature types
+- `src/services/api` RTK Query API layer
+- `src/shared` reusable UI, layouts, utilities, and types
+
+## API Integration
+
+The RTK Query base API uses `credentials: "include"` for HttpOnly cookie auth and retries once through `/auth/refresh-token` after a `401`.
+
+## Deployment
+
+Deploy to Vercel or Netlify and set:
+
+```env
+VITE_API_BASE_URL=https://your-backend-domain.com/api
+```

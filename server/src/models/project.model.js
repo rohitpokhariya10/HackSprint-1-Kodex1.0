@@ -125,6 +125,12 @@ const projectSchema = new mongoose.Schema(
       },
     },
 
+    coverImageFileId: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
     images: {
       type: [String],
       default: [],
@@ -135,6 +141,11 @@ const projectSchema = new mongoose.Schema(
         },
         message: "All image URLs must be valid",
       },
+    },
+
+    imageFileIds: {
+      type: [String],
+      default: [],
     },
 
     category: {

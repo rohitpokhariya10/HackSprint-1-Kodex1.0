@@ -118,6 +118,12 @@ const profileSchema = new mongoose.Schema(
       },
     },
 
+    avatarFileId: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
     banner: {
       type: String,
       trim: true,
@@ -126,6 +132,12 @@ const profileSchema = new mongoose.Schema(
         validator: isValidUrlOrEmpty,
         message: "Banner must be a valid URL",
       },
+    },
+
+    bannerFileId: {
+      type: String,
+      trim: true,
+      default: "",
     },
 
     skills: {
