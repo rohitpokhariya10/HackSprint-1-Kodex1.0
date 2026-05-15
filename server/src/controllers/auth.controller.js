@@ -24,7 +24,7 @@ const registerController = async (req, res) => {
       });
     }
 
-    let hashed =  hashPassword(password);
+    let hashed = await hashPassword(password);
 
     let newUser = await userModel.create({
       name,
@@ -82,7 +82,7 @@ const loggedInController = async (req, res) => {
     }
 
     //password compare
-    let comparePass = comparePassword(password , isExisted.password);
+    let comparePass = await comparePassword(password , isExisted.password);
     if (!comparePass) {
       return res.status(401).json({
         message: "Invalid credentials",
