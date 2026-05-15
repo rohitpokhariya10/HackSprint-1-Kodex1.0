@@ -39,6 +39,18 @@ const getValidationErrorMessage = (error) => {
     .join(", ");
 };
 
+const isDuplicateKeyError = (error) => error?.code === 11000;
+
+const getDuplicateKeyMessage = (error) => {
+  const duplicateFields = Object.keys(error?.keyPattern || error?.keyValue || {});
+
+  if (duplicateFields.includes("slug")) {
+    return "A blog with this title already exists. Please change the title slightly.";
+  }
+
+  return "Duplicate blog data found. Please change the details and try again.";
+};
+
 const normalizeQueryValue = (value) => {
   if (!value) return "";
   return String(value).trim().toLowerCase();
@@ -62,18 +74,23 @@ const applyBlogCoverUpload = async (
   fileIdsToDelete = []
 ) => {
   if (req.file) {
-    const uploadedCover = await uploadBufferToImageKit(
-      req.file,
-      "/devhub/blogs/covers"
-    );
+    try {
+      const uploadedCover = await uploadBufferToImageKit(
+        req.file,
+        "/devhub/blogs/covers"
+      );
 
-    payload.coverImage = uploadedCover.url;
-    payload.coverImageFileId = uploadedCover.fileId;
+      payload.coverImage = uploadedCover.url;
+      payload.coverImageFileId = uploadedCover.fileId;
 
-    if (existingBlog?.coverImageFileId) {
-      fileIdsToDelete.push(existingBlog.coverImageFileId);
+      if (existingBlog?.coverImageFileId) {
+        fileIdsToDelete.push(existingBlog.coverImageFileId);
+      }
+    } catch (error) {
+      console.warn("Blog cover upload skipped:", error.message);
     }
-  } else if (typeof req.body.coverImage === "string") {
+  } else if (typeof req.body.coverImage === "string" && req.body.coverImage === "") {
+    payload.coverImage = "";
     payload.coverImageFileId = "";
     if (existingBlog?.coverImageFileId) {
       fileIdsToDelete.push(existingBlog.coverImageFileId);
@@ -175,6 +192,10 @@ const createBlogController = async (req, res) => {
 
     if (error.name === "ValidationError") {
       return sendError(res, 400, getValidationErrorMessage(error));
+    }
+
+    if (isDuplicateKeyError(error)) {
+      return sendError(res, 409, getDuplicateKeyMessage(error));
     }
 
     return sendError(res, 500, "Internal server error");
@@ -456,6 +477,10 @@ const updateBlogController = async (req, res) => {
 
     if (error.name === "ValidationError") {
       return sendError(res, 400, getValidationErrorMessage(error));
+    }
+
+    if (isDuplicateKeyError(error)) {
+      return sendError(res, 409, getDuplicateKeyMessage(error));
     }
 
     return sendError(res, 500, "Internal server error");

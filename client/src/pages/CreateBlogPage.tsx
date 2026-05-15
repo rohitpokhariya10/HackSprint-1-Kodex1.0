@@ -10,6 +10,7 @@ import { FormInput } from "../shared/components/FormInput";
 import { FormTextarea } from "../shared/components/FormTextarea";
 import { Button } from "../shared/ui/Button";
 import { Card } from "../shared/ui/Card";
+import { getApiErrorMessage } from "../shared/lib/apiError";
 
 export function CreateBlogPage() {
   const navigate = useNavigate();
@@ -43,8 +44,13 @@ export function CreateBlogPage() {
       }
 
       navigate(`/blogs/${savedBlog?.slug || savedBlog?._id || ""}`);
-    } catch {
-      toast.error(status === "draft" ? "Could not save draft" : "Could not publish blog");
+    } catch (error) {
+      toast.error(
+        getApiErrorMessage(
+          error,
+          status === "draft" ? "Could not save draft" : "Could not publish blog"
+        )
+      );
     }
   };
   return (
