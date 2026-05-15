@@ -3,6 +3,8 @@ const { hashPassword, comparePassword } = require("../utils/hashPassword");
 const {
   generateAccessToken,
   generateRefreshToken,
+  getAccessTokenSecret,
+  getRefreshTokenSecret,
 } = require("../utils/tokens");
 const jwt = require("jsonwebtoken")
 
@@ -43,7 +45,7 @@ const rotateSessionFromRefreshToken = async (req, res) => {
     return null;
   }
 
-  const decoded = jwt.verify(incomingRefreshToken, process.env.JWT_REFRESH_TOKEN);
+  const decoded = jwt.verify(incomingRefreshToken, getRefreshTokenSecret());
   const user = await userModel.findById(decoded.userId).select("+refreshToken");
 
   if (!user || !user.isActive || incomingRefreshToken !== user.refreshToken) {
@@ -161,7 +163,7 @@ const loggedInController = async (req, res) => {
 
     //refresh token save inside DB
     isExisted.refreshToken = refreshToken;
-    await isExisted.save();
+    await isExisted.save({ validateBeforeSave: false });
 
     //save refresh and access token inside cookie
     res.cookie("accessToken", accesToken, getCookieOptions(60 * 60 * 1000));
@@ -220,7 +222,7 @@ const getRefreshTokenController = async (req, res) => {
     // 2. Verify refresh token
     const decoded = jwt.verify(
       incomingRefreshToken,
-      process.env.JWT_REFRESH_TOKEN
+      getRefreshTokenSecret()
     );
 
     // 3. Find user and explicitly select refreshToken
@@ -281,7 +283,7 @@ const getSessionController = async (req, res) => {
 
     if (accessToken) {
       try {
-        const decoded = jwt.verify(accessToken, process.env.JWT_ACCESS_TOKEN);
+        const decoded = jwt.verify(accessToken, getAccessTokenSecret());
         const user = await userModel.findById(decoded.userId);
 
         if (user && user.isActive) {

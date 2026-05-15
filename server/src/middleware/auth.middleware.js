@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const userModel = require("../models/user.model");
+const { getAccessTokenSecret } = require("../utils/tokens");
 
 const getTokenFromRequest = (req) => {
   if (req.cookies && req.cookies.accessToken) {
@@ -14,7 +15,7 @@ const getTokenFromRequest = (req) => {
 };
 
 const attachUserFromToken = async (req, token) => {
-  const decoded = jwt.verify(token, process.env.JWT_ACCESS_TOKEN);
+  const decoded = jwt.verify(token, getAccessTokenSecret());
   const user = await userModel.findById(decoded.userId);
 
   if (!user) {
