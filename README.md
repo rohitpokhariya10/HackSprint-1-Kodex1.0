@@ -104,8 +104,7 @@ Frontend on Vercel/Netlify:
 
 ## Live Links
 
-- Frontend: `TBD`
-- Backend: `TBD`
+live_link:https://hacksprint-1-kodex1-0.onrender.com/
 
 ## Demo Checklist
 
