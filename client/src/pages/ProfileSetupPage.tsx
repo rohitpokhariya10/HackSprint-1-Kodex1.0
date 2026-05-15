@@ -51,32 +51,16 @@ export function ProfileSetupPage() {
         twitter: values.twitter,
     };
 
-    const payload =
-      avatarFile || bannerFile
-        ? new FormData()
-        : {
-            headline: values.headline,
-            bio: values.bio,
-            skills: values.skills,
-            githubUsername: values.githubUsername,
-            location: values.location,
-            isOpenToWork: Boolean(values.isOpenToWork),
-            profileVisibility: "public",
-            socialLinks,
-          };
-
-    if (payload instanceof FormData) {
-      payload.append("headline", values.headline);
-      payload.append("bio", values.bio);
-      payload.append("skills", values.skills);
-      payload.append("githubUsername", values.githubUsername || "");
-      payload.append("location", values.location || "");
-      payload.append("isOpenToWork", String(Boolean(values.isOpenToWork)));
-      payload.append("profileVisibility", "public");
-      payload.append("socialLinks", JSON.stringify(socialLinks));
-      if (avatarFile) payload.append("avatar", avatarFile);
-      if (bannerFile) payload.append("banner", bannerFile);
-    }
+    const payload = {
+      headline: values.headline,
+      bio: values.bio,
+      skills: values.skills,
+      githubUsername: values.githubUsername,
+      location: values.location,
+      isOpenToWork: Boolean(values.isOpenToWork),
+      profileVisibility: "public",
+      socialLinks,
+    };
 
     try {
       if (existing) await updateProfile(payload).unwrap();

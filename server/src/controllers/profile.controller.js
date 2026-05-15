@@ -16,6 +16,7 @@ const allowedProfileFields = [
   "skills",
   "githubUsername",
   "location",
+  "socialLinks",
   "portfolioShowcase",
   "isOpenToWork",
   "profileVisibility",
@@ -46,6 +47,10 @@ const buildProfileUpdateData = (body) => {
     }
   }
 
+  if (typeof sourceBody.isOpenToWork === "string") {
+    sourceBody.isOpenToWork = sourceBody.isOpenToWork === "true";
+  }
+
   // Normal fields
   allowedProfileFields.forEach((field) => {
     if (sourceBody[field] !== undefined) {
@@ -54,7 +59,7 @@ const buildProfileUpdateData = (body) => {
   });
 
   // Nested socialLinks fields
-  if (sourceBody.socialLinks) {
+  if (sourceBody.socialLinks && typeof sourceBody.socialLinks === "object") {
     if (sourceBody.socialLinks.github !== undefined) {
       updateData["socialLinks.github"] = sourceBody.socialLinks.github;
     }
@@ -85,16 +90,20 @@ const applyProfileImageUploads = async (
   const bannerFile = req.files?.banner?.[0];
 
   if (avatarFile) {
-    const uploadedAvatar = await uploadBufferToImageKit(
-      avatarFile,
-      "/devhub/profiles/avatars"
-    );
+    try {
+      const uploadedAvatar = await uploadBufferToImageKit(
+        avatarFile,
+        "/devhub/profiles/avatars"
+      );
 
-    updateData.avatar = uploadedAvatar.url;
-    updateData.avatarFileId = uploadedAvatar.fileId;
+      updateData.avatar = uploadedAvatar.url;
+      updateData.avatarFileId = uploadedAvatar.fileId;
 
-    if (existingProfile?.avatarFileId) {
-      fileIdsToDelete.push(existingProfile.avatarFileId);
+      if (existingProfile?.avatarFileId) {
+        fileIdsToDelete.push(existingProfile.avatarFileId);
+      }
+    } catch (error) {
+      console.warn("Avatar upload skipped:", error.message);
     }
   } else if (typeof req.body.avatar === "string") {
     updateData.avatarFileId = "";
@@ -104,16 +113,20 @@ const applyProfileImageUploads = async (
   }
 
   if (bannerFile) {
-    const uploadedBanner = await uploadBufferToImageKit(
-      bannerFile,
-      "/devhub/profiles/banners"
-    );
+    try {
+      const uploadedBanner = await uploadBufferToImageKit(
+        bannerFile,
+        "/devhub/profiles/banners"
+      );
 
-    updateData.banner = uploadedBanner.url;
-    updateData.bannerFileId = uploadedBanner.fileId;
+      updateData.banner = uploadedBanner.url;
+      updateData.bannerFileId = uploadedBanner.fileId;
 
-    if (existingProfile?.bannerFileId) {
-      fileIdsToDelete.push(existingProfile.bannerFileId);
+      if (existingProfile?.bannerFileId) {
+        fileIdsToDelete.push(existingProfile.bannerFileId);
+      }
+    } catch (error) {
+      console.warn("Banner upload skipped:", error.message);
     }
   } else if (typeof req.body.banner === "string") {
     updateData.bannerFileId = "";
