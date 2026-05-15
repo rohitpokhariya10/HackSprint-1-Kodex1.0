@@ -3,7 +3,8 @@ import { clearAuth, setUser } from "../../features/auth/authSlice";
 import type { ApiResponse, Blog, Profile, Project, User } from "../../shared/types/api";
 
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
+  import.meta.env.VITE_API_BASE_URL ||
+  "https://hacksprint-1-kodex1-0.onrender.com/api";
 
 type QueryParams = Record<string, string | number | boolean | undefined | null>;
 type SessionResponse = ApiResponse<User> & { authenticated?: boolean };

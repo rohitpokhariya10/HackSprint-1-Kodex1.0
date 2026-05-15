@@ -26,7 +26,7 @@ npm run dev
 Set the backend URL:
 
 ```env
-VITE_API_BASE_URL=http://localhost:3000/api
+VITE_API_BASE_URL=https://hacksprint-1-kodex1-0.onrender.com/api
 ```
 
 ## Build
@@ -52,5 +52,5 @@ The RTK Query base API uses `credentials: "include"` for HttpOnly cookie auth an
 Deploy to Vercel or Netlify and set:
 
 ```env
-VITE_API_BASE_URL=https://your-backend-domain.com/api
+VITE_API_BASE_URL=https://hacksprint-1-kodex1-0.onrender.com/api
 ```

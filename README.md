@@ -42,7 +42,7 @@ IMAGEKIT_URL_ENDPOINT=
 Frontend `client/.env`:
 
 ```env
-VITE_API_BASE_URL=http://localhost:3000/api
+VITE_API_BASE_URL=https://hacksprint-1-kodex1-0.onrender.com/api
 ```
 
 ## Local Setup
@@ -100,7 +100,7 @@ Frontend on Vercel/Netlify:
 - Root directory: `client`
 - Build command: `npm run build`
 - Publish directory: `dist`
-- Set `VITE_API_BASE_URL=https://your-backend-domain.com/api`
+- Set `VITE_API_BASE_URL=https://hacksprint-1-kodex1-0.onrender.com/api`
 
 ## Live Links
 
