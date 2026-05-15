@@ -6,11 +6,13 @@ const authRouter = require("./routes/auth.route")
 const profileRoutes = require("./routes/profile.routes");
 const projectRoutes = require("./routes/project.routes");
 const blogRoutes = require("./routes/blog.routes");
+const { uploadsRoot } = require("./services/localUpload.service");
 
 
 
 const app = express()
 
+app.set("trust proxy", 1);
 
 const allowedOrigin = process.env.CLIENT_URL || "http://localhost:5173";
 const frontendPath = path.join(__dirname, "..", "view");
@@ -36,6 +38,7 @@ app.use("/api/profiles", profileRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/blogs", blogRoutes);
 
+app.use("/uploads", express.static(uploadsRoot));
 app.use(express.static(frontendPath));
 
 app.get(/^\/(?!api(?:\/|$)).*/, (req, res, next) => {

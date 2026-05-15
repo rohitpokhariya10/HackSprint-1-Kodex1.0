@@ -6,6 +6,52 @@ const {
   uploadBufferToImageKit,
   deleteManyFromImageKit,
 } = require("../services/imagekit.service");
+const { uploadBufferToLocal } = require("../services/localUpload.service");
+
+const uploadProfileImage = async (file, imageKitFolder, localFolder, req) => {
+  try {
+    return await uploadBufferToImageKit(file, imageKitFolder);
+  } catch (error) {
+    console.warn("ImageKit profile upload failed, using local upload:", error.message);
+    return uploadBufferToLocal(file, localFolder, req);
+  }
+};
+
+const getMongooseErrorResponse = (error) => {
+  if (error?.name === "ValidationError") {
+    const firstError = Object.values(error.errors || {})[0];
+    return {
+      statusCode: 400,
+      message: firstError?.message || "Please check your profile details.",
+    };
+  }
+
+  if (error?.code === 11000) {
+    return {
+      statusCode: 409,
+      message: "Profile already exists. Please update your profile instead.",
+    };
+  }
+
+  if (error?.name === "CastError") {
+    return {
+      statusCode: 400,
+      message: "Invalid profile data.",
+    };
+  }
+
+  if (
+    error?.message?.includes("Updating the path") ||
+    error?.message?.includes("would create a conflict")
+  ) {
+    return {
+      statusCode: 400,
+      message: "Please check your profile links and try again.",
+    };
+  }
+
+  return null;
+};
 
 // Allowed fields for profile update
 const allowedProfileFields = [
@@ -16,7 +62,6 @@ const allowedProfileFields = [
   "skills",
   "githubUsername",
   "location",
-  "socialLinks",
   "portfolioShowcase",
   "isOpenToWork",
   "profileVisibility",
@@ -91,9 +136,11 @@ const applyProfileImageUploads = async (
 
   if (avatarFile) {
     try {
-      const uploadedAvatar = await uploadBufferToImageKit(
+      const uploadedAvatar = await uploadProfileImage(
         avatarFile,
-        "/devhub/profiles/avatars"
+        "/devhub/profiles/avatars",
+        "profiles-avatars",
+        req
       );
 
       updateData.avatar = uploadedAvatar.url;
@@ -103,7 +150,8 @@ const applyProfileImageUploads = async (
         fileIdsToDelete.push(existingProfile.avatarFileId);
       }
     } catch (error) {
-      console.warn("Avatar upload skipped:", error.message);
+      console.warn("Avatar upload failed:", error.message);
+      throw error;
     }
   } else if (typeof req.body.avatar === "string") {
     updateData.avatarFileId = "";
@@ -114,9 +162,11 @@ const applyProfileImageUploads = async (
 
   if (bannerFile) {
     try {
-      const uploadedBanner = await uploadBufferToImageKit(
+      const uploadedBanner = await uploadProfileImage(
         bannerFile,
-        "/devhub/profiles/banners"
+        "/devhub/profiles/banners",
+        "profiles-banners",
+        req
       );
 
       updateData.banner = uploadedBanner.url;
@@ -126,7 +176,8 @@ const applyProfileImageUploads = async (
         fileIdsToDelete.push(existingProfile.bannerFileId);
       }
     } catch (error) {
-      console.warn("Banner upload skipped:", error.message);
+      console.warn("Banner upload failed:", error.message);
+      throw error;
     }
   } else if (typeof req.body.banner === "string") {
     updateData.bannerFileId = "";
@@ -180,6 +231,14 @@ const createProfileController = async (req, res) => {
       return res.status(error.statusCode || 500).json({
         success: false,
         message: error.publicMessage,
+      });
+    }
+
+    const mongooseError = getMongooseErrorResponse(error);
+    if (mongooseError) {
+      return res.status(mongooseError.statusCode).json({
+        success: false,
+        message: mongooseError.message,
       });
     }
 
@@ -284,6 +343,14 @@ const updateMyProfileController = async (req, res) => {
       return res.status(error.statusCode || 500).json({
         success: false,
         message: error.publicMessage,
+      });
+    }
+
+    const mongooseError = getMongooseErrorResponse(error);
+    if (mongooseError) {
+      return res.status(mongooseError.statusCode).json({
+        success: false,
+        message: mongooseError.message,
       });
     }
 

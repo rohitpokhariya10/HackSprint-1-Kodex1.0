@@ -5,6 +5,8 @@
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "postinstall": "node scripts/build-client-for-server.js",
+    "build": "node scripts/build-client-for-server.js",
     "start": "node server.js",
     "dev": "nodemon server.js",
     "check": "node --check server.js"
