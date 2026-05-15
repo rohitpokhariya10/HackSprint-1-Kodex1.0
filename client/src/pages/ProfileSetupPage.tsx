@@ -11,6 +11,22 @@ import { FormTextarea } from "../shared/components/FormTextarea";
 import { Button } from "../shared/ui/Button";
 import { Card } from "../shared/ui/Card";
 
+const getApiErrorMessage = (error: unknown) => {
+  if (
+    error &&
+    typeof error === "object" &&
+    "data" in error &&
+    error.data &&
+    typeof error.data === "object" &&
+    "message" in error.data &&
+    typeof error.data.message === "string"
+  ) {
+    return error.data.message;
+  }
+
+  return "Could not save profile";
+};
+
 export function ProfileSetupPage() {
   const navigate = useNavigate();
   const { data } = useGetMyProfileQuery();
@@ -63,12 +79,31 @@ export function ProfileSetupPage() {
     };
 
     try {
-      if (existing) await updateProfile(payload).unwrap();
-      else await createProfile(payload).unwrap();
+      const requestBody =
+        avatarFile || bannerFile
+          ? Object.entries(payload).reduce((formData, [key, value]) => {
+              formData.append(
+                key,
+                key === "socialLinks" ? JSON.stringify(value) : String(value ?? "")
+              );
+              return formData;
+            }, new FormData())
+          : payload;
+
+      if (avatarFile && requestBody instanceof FormData) {
+        requestBody.append("avatar", avatarFile);
+      }
+
+      if (bannerFile && requestBody instanceof FormData) {
+        requestBody.append("banner", bannerFile);
+      }
+
+      if (existing) await updateProfile(requestBody).unwrap();
+      else await createProfile(requestBody).unwrap();
       toast.success("Profile saved");
       navigate("/profile/me");
-    } catch {
-      toast.error("Could not save profile");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
     }
   };
 
